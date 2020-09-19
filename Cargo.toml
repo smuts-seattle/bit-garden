@@ -1,0 +1,11 @@
+[package]
+name = "bit-garden"
+version = "0.1.0"
+authors = ["smuts"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rand = "0.7.3"
+sdl2 = "0.34"
