@@ -1,14 +1,15 @@
 mod game;
 mod graphics;
 
+use crate::game::Concept;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
 
-pub const SQUARE_SIZE: u32 = 2;
+pub const SQUARE_SIZE: u32 = 8;
 pub const DEFAULT_PLAYGROUND_WIDTH: u32 = 100;
 pub const DEFAULT_PLAYGROUND_HEIGHT: u32 = 100;
-pub const DEFAULT_FRAME_RATE: u32 = 10;
+pub const DEFAULT_FRAME_RATE: u32 = 2;
 
 pub fn main() -> Result<(), String> {
   let args: Vec<String> = std::env::args().collect();
@@ -28,13 +29,24 @@ pub fn main() -> Result<(), String> {
   } else {
     DEFAULT_FRAME_RATE
   };
+  let show_fps = if args.len() > 4 {
+    str::parse::<u32>(&args[4]).expect("Third argument must be 1 or 0, to show or hide frame rate")
+  } else {
+    0
+  };
 
   let mut game = game::GameOfLife::new(playground_height, playground_width);
-  let mut graphics =
-    graphics::Graphics::new(SQUARE_SIZE, playground_height, playground_width, frame_rate)
-      .expect("failed to load graphics");
+  let mut graphics = graphics::Graphics::new(
+    SQUARE_SIZE,
+    playground_height,
+    playground_width,
+    frame_rate,
+    show_fps == 1,
+  )
+  .expect("failed to load graphics");
 
   let mut last_change: (u32, u32) = (0, 0);
+  let mut curr_type = Concept::Sunflower;
 
   graphics
     .run(
@@ -65,11 +77,15 @@ pub fn main() -> Result<(), String> {
             let y = (y as u32) / SQUARE_SIZE;
             match game.get_mut(x as i32, y as i32) {
               Some(square) => {
-                if *square == crate::game::Concept::Soil {
-                  *square = crate::game::Concept::Sunflower;
+                if *square == Concept::Soil {
+                  *square = Concept::Sunflower;
+                } else if *square == Concept::Sunflower {
+                  *square = Concept::Rose
                 } else {
-                  *square = crate::game::Concept::Soil;
+                  *square = Concept::Soil;
                 }
+                curr_type = *square;
+                last_change = (x, y);
               }
               None => unreachable!(),
             };
@@ -84,11 +100,7 @@ pub fn main() -> Result<(), String> {
                 last_change = (x, y);
                 match game.get_mut(x as i32, y as i32) {
                   Some(square) => {
-                    if *square == crate::game::Concept::Soil {
-                      *square = crate::game::Concept::Sunflower;
-                    } else {
-                      *square = crate::game::Concept::Soil;
-                    }
+                    *square = curr_type;
                   }
                   None => unreachable!(),
                 };

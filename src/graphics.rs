@@ -12,6 +12,10 @@ use crate::game::GameOfLife;
 
 const SOIL_COLOR: Color = Color::RGB(53, 48, 40);
 const SUNFLOWER_COLOR: Color = Color::RGB(100, 87, 39);
+const ROSE_COLOR: Color = Color::RGB(191, 67, 66);
+const DOGWOOD_COLOR: Color = Color::RGB(234, 213, 230);
+
+const FPS_COLOR: Color = Color::RGB(208, 240, 192);
 
 pub struct Graphics {
   sdl_context: sdl2::Sdl,
@@ -21,12 +25,13 @@ pub struct Graphics {
   world_width: u32,
   world_height: u32,
   frame_rate: u32,
+  show_fps: bool,
 }
 
 pub struct Textures<'a> {
   sunflower: Texture<'a>,
-  red: Texture<'a>,
-  yellow: Texture<'a>,
+  rose: Texture<'a>,
+  dogwood: Texture<'a>,
 }
 
 impl Graphics {
@@ -35,6 +40,7 @@ impl Graphics {
     world_height: u32,
     world_width: u32,
     frame_rate: u32,
+    show_fps: bool,
   ) -> Result<Graphics, String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
@@ -83,6 +89,7 @@ impl Graphics {
       world_width: world_width,
       world_height: world_height,
       frame_rate,
+      show_fps,
     });
   }
 
@@ -94,16 +101,17 @@ impl Graphics {
     let mut sunflower_texture = texture_creator
       .create_texture_target(None, square_size, square_size)
       .map_err(|e| e.to_string())?;
-    let mut red_texture = texture_creator
+    let mut rose_texture = texture_creator
       .create_texture_target(None, square_size, square_size)
       .map_err(|e| e.to_string())?;
-    let mut yellow_texture = texture_creator
+    let mut dogwood_texture = texture_creator
       .create_texture_target(None, square_size, square_size)
       .map_err(|e| e.to_string())?;
+
     let textures = vec![
       (&mut sunflower_texture, 1),
-      (&mut red_texture, 2),
-      (&mut yellow_texture, 3),
+      (&mut rose_texture, 2),
+      (&mut dogwood_texture, 3),
     ];
 
     let square_size = square_size;
@@ -120,13 +128,13 @@ impl Graphics {
               .expect("could not draw point");
           }
           2 => {
-            texture_canvas.set_draw_color(Color::RGB(192, 0, 0));
+            texture_canvas.set_draw_color(ROSE_COLOR);
             texture_canvas
               .fill_rect(Rect::new(0, 0, square_size, square_size))
               .expect("could not draw point");
           }
           3 => {
-            texture_canvas.set_draw_color(Color::RGB(192, 192, 0));
+            texture_canvas.set_draw_color(DOGWOOD_COLOR);
             texture_canvas
               .fill_rect(Rect::new(0, 0, square_size, square_size))
               .expect("could not draw point");
@@ -137,8 +145,8 @@ impl Graphics {
       .map_err(|e| e.to_string())?;
     Ok(Textures {
       sunflower: sunflower_texture,
-      red: red_texture,
-      yellow: yellow_texture,
+      rose: rose_texture,
+      dogwood: dogwood_texture,
     })
   }
 
@@ -159,23 +167,13 @@ impl Graphics {
     let mut event_pump = self.sdl_context.event_pump()?;
 
     // Load a font
-    let mut font = ttf_context.load_font(Path::new("fonts/NotoMono-Regular.ttf"), 128)?;
-    font.set_style(sdl2::ttf::FontStyle::BOLD);
+    let font = ttf_context.load_font(Path::new("fonts/NotoMono-Regular.ttf"), 14)?;
 
     let textures =
       Graphics::dummy_texture(&mut self.canvas, &self.texture_creator, self.square_size)
         .expect("could not build square texture");
 
     'exit: loop {
-      // render a surface, and convert it to a texture bound to the canvas
-      let surface = font
-        .render(&std::string::ToString::to_string(&frame_rate))
-        .blended(Color::RGB(255, 0, 0))
-        .map_err(|e| e.to_string())?;
-      let texture = self
-        .texture_creator
-        .create_texture_from_surface(&surface)
-        .map_err(|e| e.to_string())?;
       // get the inputs here
       for event in event_pump.poll_iter() {
         if on_event(game, event) {
@@ -192,24 +190,62 @@ impl Graphics {
 
       self.canvas.set_draw_color(SOIL_COLOR);
       self.canvas.clear();
-      self
-        .canvas
-        .copy(&texture, None, Some(Rect::new(0, 0, 14, 14)))?;
 
       for (i, unit) in game.into_iter().enumerate() {
         let i = i as u32;
-        if unit.concept == Concept::Sunflower {
-          self.canvas.copy(
-            &textures.sunflower,
-            None,
-            Rect::new(
-              ((i % self.world_width) * self.square_size) as i32,
-              ((i / self.world_width) * self.square_size) as i32,
-              self.square_size,
-              self.square_size,
-            ),
-          )?;
+        match unit.concept {
+          Concept::Sunflower => {
+            self.canvas.copy(
+              &textures.sunflower,
+              None,
+              Rect::new(
+                ((i % self.world_width) * self.square_size) as i32,
+                ((i / self.world_width) * self.square_size) as i32,
+                self.square_size,
+                self.square_size,
+              ),
+            )?;
+          }
+          Concept::Rose => {
+            self.canvas.copy(
+              &textures.rose,
+              None,
+              Rect::new(
+                ((i % self.world_width) * self.square_size) as i32,
+                ((i / self.world_width) * self.square_size) as i32,
+                self.square_size,
+                self.square_size,
+              ),
+            )?;
+          }
+          Concept::Dogwood => {
+            self.canvas.copy(
+              &textures.dogwood,
+              None,
+              Rect::new(
+                ((i % self.world_width) * self.square_size) as i32,
+                ((i / self.world_width) * self.square_size) as i32,
+                self.square_size,
+                self.square_size,
+              ),
+            )?;
+          }
+          _ => {}
         }
+      }
+
+      if self.show_fps {
+        let surface = font
+          .render(&format!("{:03}", frame_rate))
+          .blended(FPS_COLOR)
+          .map_err(|e| e.to_string())?;
+        let texture = self
+          .texture_creator
+          .create_texture_from_surface(&surface)
+          .map_err(|e| e.to_string())?;
+        self
+          .canvas
+          .copy(&texture, None, Some(Rect::new(0, 0, 42, 14)))?;
       }
       self.canvas.present();
     }
