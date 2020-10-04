@@ -14,6 +14,9 @@ const SOIL_COLOR: Color = Color::RGB(53, 48, 40);
 const SUNFLOWER_COLOR: Color = Color::RGB(100, 87, 39);
 const ROSE_COLOR: Color = Color::RGB(191, 67, 66);
 const DOGWOOD_COLOR: Color = Color::RGB(234, 213, 230);
+const DOGWOOD_COLOR_FADED: Color = Color::RGB(185, 168, 178);
+const DOGWOOD_COLOR_RELIC: Color = Color::RGB(119, 108, 109);
+const DOGWOOD_COLOR_RUIN: Color = Color::RGB(69, 63, 57);
 
 const FPS_COLOR: Color = Color::RGB(208, 240, 192);
 
@@ -32,6 +35,9 @@ pub struct Textures<'a> {
   sunflower: Texture<'a>,
   rose: Texture<'a>,
   dogwood: Texture<'a>,
+  dogwood_faded: Texture<'a>,
+  dogwood_relic: Texture<'a>,
+  dogwood_ruin: Texture<'a>,
 }
 
 impl Graphics {
@@ -107,18 +113,30 @@ impl Graphics {
     let mut dogwood_texture = texture_creator
       .create_texture_target(None, square_size, square_size)
       .map_err(|e| e.to_string())?;
+    let mut dogwood_faded_texture = texture_creator
+      .create_texture_target(None, square_size, square_size)
+      .map_err(|e| e.to_string())?;
+    let mut dogwood_relic_texture = texture_creator
+      .create_texture_target(None, square_size, square_size)
+      .map_err(|e| e.to_string())?;
+    let mut dogwood_ruin_texture = texture_creator
+      .create_texture_target(None, square_size, square_size)
+      .map_err(|e| e.to_string())?;
 
     let textures = vec![
       (&mut sunflower_texture, 1),
       (&mut rose_texture, 2),
       (&mut dogwood_texture, 3),
+      (&mut dogwood_faded_texture, 4),
+      (&mut dogwood_relic_texture, 5),
+      (&mut dogwood_ruin_texture, 6),
     ];
 
     let square_size = square_size;
     // let's change the textures we just created
     canvas
       .with_multiple_texture_canvas(textures.iter(), |texture_canvas, i| {
-        texture_canvas.set_draw_color(Color::RGB(0, 0, 0));
+        texture_canvas.set_draw_color(SOIL_COLOR);
         texture_canvas.clear();
         match *i {
           1 => {
@@ -139,6 +157,24 @@ impl Graphics {
               .fill_rect(Rect::new(0, 0, square_size, square_size))
               .expect("could not draw point");
           }
+          4 => {
+            texture_canvas.set_draw_color(DOGWOOD_COLOR_FADED);
+            texture_canvas
+              .fill_rect(Rect::new(0, 0, square_size, square_size))
+              .expect("could not draw point");
+          }
+          5 => {
+            texture_canvas.set_draw_color(DOGWOOD_COLOR_RELIC);
+            texture_canvas
+              .fill_rect(Rect::new(0, 0, square_size, square_size))
+              .expect("could not draw point");
+          }
+          6 => {
+            texture_canvas.set_draw_color(DOGWOOD_COLOR_RUIN);
+            texture_canvas
+              .fill_rect(Rect::new(0, 0, square_size, square_size))
+              .expect("could not draw point");
+          }
           _ => {}
         }
       })
@@ -147,6 +183,9 @@ impl Graphics {
       sunflower: sunflower_texture,
       rose: rose_texture,
       dogwood: dogwood_texture,
+      dogwood_faded: dogwood_faded_texture,
+      dogwood_relic: dogwood_relic_texture,
+      dogwood_ruin: dogwood_ruin_texture,
     })
   }
 
@@ -219,16 +258,51 @@ impl Graphics {
             )?;
           }
           Concept::Dogwood => {
-            self.canvas.copy(
-              &textures.dogwood,
-              None,
-              Rect::new(
-                ((i % self.world_width) * self.square_size) as i32,
-                ((i / self.world_width) * self.square_size) as i32,
-                self.square_size,
-                self.square_size,
-              ),
-            )?;
+            if unit.blood < -70 {
+              self.canvas.copy(
+                &textures.dogwood,
+                None,
+                Rect::new(
+                  ((i % self.world_width) * self.square_size) as i32,
+                  ((i / self.world_width) * self.square_size) as i32,
+                  self.square_size,
+                  self.square_size,
+                ),
+              )?;
+            } else if unit.blood < -40 {
+              self.canvas.copy(
+                &textures.dogwood_faded,
+                None,
+                Rect::new(
+                  ((i % self.world_width) * self.square_size) as i32,
+                  ((i / self.world_width) * self.square_size) as i32,
+                  self.square_size,
+                  self.square_size,
+                ),
+              )?;
+            } else if unit.blood < -10 {
+              self.canvas.copy(
+                &textures.dogwood_relic,
+                None,
+                Rect::new(
+                  ((i % self.world_width) * self.square_size) as i32,
+                  ((i / self.world_width) * self.square_size) as i32,
+                  self.square_size,
+                  self.square_size,
+                ),
+              )?;
+            } else {
+              self.canvas.copy(
+                &textures.dogwood_ruin,
+                None,
+                Rect::new(
+                  ((i % self.world_width) * self.square_size) as i32,
+                  ((i / self.world_width) * self.square_size) as i32,
+                  self.square_size,
+                  self.square_size,
+                ),
+              )?;
+            }
           }
           _ => {}
         }

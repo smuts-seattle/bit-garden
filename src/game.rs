@@ -15,7 +15,7 @@ pub enum Concept {
 #[derive(Clone, Copy)]
 pub struct CellState {
   pub concept: Concept,
-  blood: i32,
+  pub blood: i32,
 }
 
 pub struct GameOfLife {
@@ -138,9 +138,14 @@ impl GameOfLife {
           } else {
             to_dust(square);
           }
-        } else if square.concept == Concept::Soil && (count == 3) {
-          // Life
-          square.concept = Concept::Sunflower;
+        } else if square.concept == Concept::Soil {
+          if count == 3 {
+            // Life
+            square.concept = Concept::Sunflower;
+          } else if count == 8 {
+            // Compassion
+            square.concept = Concept::Rose;
+          }
         }
       } else if square.concept == Concept::Rose {
         let mut suffering = 0;
@@ -150,12 +155,14 @@ impl GameOfLife {
         });
 
         if suffering >= 12 {
+          // Sacrifice
           square.concept = Concept::Dogwood;
-          square.blood = -3;
+          square.blood = -100;
         }
       } else if square.concept == Concept::Dogwood {
         square.blood += 1;
         if square.blood >= 0 {
+          // Forgotten
           to_dust(square);
         }
       }
