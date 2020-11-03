@@ -258,7 +258,7 @@ impl Graphics {
             )?;
           }
           Concept::Dogwood => {
-            if unit.blood < -70 {
+            if unit.blood < -35 {
               self.canvas.copy(
                 &textures.dogwood,
                 None,
@@ -269,7 +269,7 @@ impl Graphics {
                   self.square_size,
                 ),
               )?;
-            } else if unit.blood < -40 {
+            } else if unit.blood < -20 {
               self.canvas.copy(
                 &textures.dogwood_faded,
                 None,
@@ -280,7 +280,7 @@ impl Graphics {
                   self.square_size,
                 ),
               )?;
-            } else if unit.blood < -10 {
+            } else if unit.blood < -5 {
               self.canvas.copy(
                 &textures.dogwood_relic,
                 None,
