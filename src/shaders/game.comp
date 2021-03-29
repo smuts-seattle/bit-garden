@@ -11,7 +11,7 @@ struct CellState {
   int blood;
 };
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 layout(std430, set = 0, binding = 0) buffer Curr { 
   CellState curr[]; 
@@ -21,8 +21,100 @@ layout(std430, set = 0, binding = 1) buffer Next {
   CellState next[]; 
 };
 
+layout(std430, set = 0, binding = 2) buffer Width { 
+  CellState world_width_buffer[]; 
+};
+
+#define check_nearby(_x, _y, _radius_outer, _radius_inner, _check) \
+for (int i = 0 - _radius_outer; i <= _radius_outer; i++) {\
+  for (int j = 0 - _radius_outer; j <= _radius_outer; j++) {\
+    if (!(abs(i) < _radius_inner && abs(j) < _radius_inner)) {\
+      int peek_x = int(_x) + i;\
+      int peek_y = int(_y) + j;\
+      if (peek_x >= 0 && peek_y >= 0 && peek_x < world_width && peek_y < world_width) {\
+        CellState cell = curr[peek_x + (peek_y * world_width)];\
+        _check\
+      }\
+    }\
+  }\
+}
+
+void to_dust(inout CellState square) {
+  square.concept = Soil;
+  square.blood = 0;
+}
+
 void main() {
+  uint world_width = world_width_buffer[0].blood;
   uint idx = gl_GlobalInvocationID.x;
-  //next[idx] = curr[idx];
-  next[idx] = CellState(3, 12);
+  CellState square = curr[idx];
+  uint x = idx % world_width;
+  uint y = idx / world_width;
+
+  if (square.concept == Soil || square.concept == Sunflower) {
+    uint count = 0;
+    check_nearby(x, y, 1, 1, {
+      if (cell.concept == Sunflower) {
+        count += 1;
+      }
+    });
+    if (square.concept == Sunflower && (count > 3 || count < 2)) {
+      // Death
+      bool loved = false;
+      check_nearby(x, y, 2, 2, {
+        if (cell.concept == Rose) {
+          loved = true;
+          i = j = 1000;
+          break;
+        }
+      });
+
+      if (loved) {
+        square.blood += 1;
+      } else if (square.blood > 2) {
+        bool compassion = false;
+        check_nearby(x, y, 2, 2, {
+          if (cell.concept == Dogwood) {
+            compassion = true;
+            i = j = 1000;
+            break;
+          }
+        });
+        if (compassion) {
+          square.concept = Rose;
+        } else {
+          to_dust(square);
+        }
+      } else {
+        to_dust(square);
+      }
+    } else if (square.concept == Soil) {
+      if (count == 3) {
+        // Life
+        square.concept = Sunflower;
+      } else if (count == 8) {
+        // Compassion
+        square.concept = Rose;
+      }
+    }
+  } else if (square.concept == Rose) {
+    int suffering = 0;
+    check_nearby(x, y, 2, 1, {
+      suffering += cell.blood;
+    });
+
+    if (suffering >= 12) {
+      // Sacrifice
+      square.concept = Dogwood;
+      square.blood = -50;
+    }
+  } else if (square.concept == Dogwood) {
+    square.blood += 1;
+    if (square.blood >= 0) {
+      // Forgotten
+      to_dust(square);
+    }
+  }
+    
+  next[idx] = square;
 }

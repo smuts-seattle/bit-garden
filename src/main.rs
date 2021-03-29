@@ -46,8 +46,6 @@ pub fn main() -> Result<(), String> {
   )
   .expect("failed to load graphics");
 
-  ashtest::run(&game.playground);
-
   let mut last_change: (u32, u32) = (0, 0);
   let mut curr_type = Concept::Sunflower;
 
@@ -117,7 +115,8 @@ pub fn main() -> Result<(), String> {
       |game| {
         // update the game loop here
         if let game::State::Playing = game.state() {
-          game.update();
+          //game.update();
+          game.playground = ashtest::run(&game.playground, playground_width);
         };
       },
     )
