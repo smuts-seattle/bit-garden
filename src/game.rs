@@ -13,13 +13,14 @@ pub enum Concept {
 }
 
 #[derive(Clone, Copy)]
+#[repr(C)]
 pub struct CellState {
   pub concept: Concept,
   pub blood: i32,
 }
 
 pub struct GameOfLife {
-  playground: Vec<CellState>,
+  pub playground: Vec<CellState>,
   state: State,
   world_height: u32,
   world_width: u32,

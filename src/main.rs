@@ -1,3 +1,4 @@
+mod ashtest;
 mod game;
 mod graphics;
 
@@ -44,6 +45,8 @@ pub fn main() -> Result<(), String> {
     show_fps == 1,
   )
   .expect("failed to load graphics");
+
+  ashtest::run(&game.playground);
 
   let mut last_change: (u32, u32) = (0, 0);
   let mut curr_type = Concept::Sunflower;

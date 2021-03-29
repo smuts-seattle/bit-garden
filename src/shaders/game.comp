@@ -1,0 +1,28 @@
+#version 450 
+
+// Concept enumerations
+const int Soil = 0;
+const int Sunflower = 1;
+const int Rose = 2;
+const int Dogwood = 3;
+
+struct CellState {
+  int concept;
+  int blood;
+};
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) buffer Curr { 
+  CellState curr[]; 
+};
+
+layout(std430, set = 0, binding = 1) buffer Next { 
+  CellState next[]; 
+};
+
+void main() {
+  uint idx = gl_GlobalInvocationID.x;
+  //next[idx] = curr[idx];
+  next[idx] = CellState(3, 12);
+}
