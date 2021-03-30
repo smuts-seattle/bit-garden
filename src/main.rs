@@ -7,7 +7,7 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
 
-pub const SQUARE_SIZE: u32 = 8;
+pub const SQUARE_SIZE: u32 = 1;
 pub const DEFAULT_PLAYGROUND_WIDTH: u32 = 100;
 pub const DEFAULT_PLAYGROUND_HEIGHT: u32 = 100;
 pub const DEFAULT_FRAME_RATE: u32 = 2;
@@ -45,6 +45,7 @@ pub fn main() -> Result<(), String> {
     show_fps == 1,
   )
   .expect("failed to load graphics");
+  let runner = ashtest::Runner::new();
 
   let mut last_change: (u32, u32) = (0, 0);
   let mut curr_type = Concept::Sunflower;
@@ -116,7 +117,7 @@ pub fn main() -> Result<(), String> {
         // update the game loop here
         if let game::State::Playing = game.state() {
           //game.update();
-          game.playground = ashtest::run(&game.playground, playground_width);
+          game.playground = runner.run(&game.playground, playground_width);
         };
       },
     )
