@@ -1,14 +1,14 @@
 extern crate sdl2;
 
+use crate::game::CellState;
+use crate::game::Concept;
+use crate::game::Runner;
 use sdl2::event::Event;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::{Canvas, Texture, TextureCreator};
 use sdl2::video::{Window, WindowContext};
 use std::path::Path;
-
-use crate::game::Concept;
-use crate::game::GameOfLife;
 
 const SOIL_COLOR: Color = Color::RGB(53, 48, 40);
 const SUNFLOWER_COLOR: Color = Color::RGB(100, 87, 39);
@@ -26,7 +26,6 @@ pub struct Graphics {
   texture_creator: TextureCreator<WindowContext>,
   square_size: u32,
   world_width: u32,
-  world_height: u32,
   frame_rate: u32,
   show_fps: bool,
 }
@@ -43,7 +42,6 @@ pub struct Textures<'a> {
 impl Graphics {
   pub fn new(
     square_size: u32,
-    world_height: u32,
     world_width: u32,
     frame_rate: u32,
     show_fps: bool,
@@ -59,7 +57,7 @@ impl Graphics {
       .window(
         "bit-garden",
         square_size * world_width,
-        square_size * world_height,
+        square_size * world_width,
       )
       .position_centered()
       .build()
@@ -93,7 +91,6 @@ impl Graphics {
       texture_creator: texture_creator,
       square_size: square_size,
       world_width: world_width,
-      world_height: world_height,
       frame_rate,
       show_fps,
     });
@@ -191,13 +188,13 @@ impl Graphics {
 
   pub fn run<FEvent, FFrame>(
     &mut self,
-    game: &mut GameOfLife,
+    game: &mut Runner,
     mut on_event: FEvent,
     mut on_frame: FFrame,
   ) -> Result<(), String>
   where
-    FEvent: FnMut(&mut GameOfLife, Event) -> bool,
-    FFrame: FnMut(&mut GameOfLife),
+    FEvent: FnMut(/*&mut GameOfLife,*/ Event) -> bool,
+    FFrame: FnMut(&mut Runner),
   {
     let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string())?;
     let mut timer = self.sdl_context.timer()?;
@@ -215,7 +212,7 @@ impl Graphics {
     'exit: loop {
       // get the inputs here
       for event in event_pump.poll_iter() {
-        if on_event(game, event) {
+        if on_event(event) {
           break 'exit Ok(());
         }
       }
@@ -230,70 +227,15 @@ impl Graphics {
       self.canvas.set_draw_color(SOIL_COLOR);
       self.canvas.clear();
 
-      for (i, unit) in game.into_iter().enumerate() {
+      for i in 0..game.game_size {
         let i = i as u32;
-        match unit.concept {
-          Concept::Sunflower => {
-            self.canvas.copy(
-              &textures.sunflower,
-              None,
-              Rect::new(
-                ((i % self.world_width) * self.square_size) as i32,
-                ((i / self.world_width) * self.square_size) as i32,
-                self.square_size,
-                self.square_size,
-              ),
-            )?;
-          }
-          Concept::Rose => {
-            self.canvas.copy(
-              &textures.rose,
-              None,
-              Rect::new(
-                ((i % self.world_width) * self.square_size) as i32,
-                ((i / self.world_width) * self.square_size) as i32,
-                self.square_size,
-                self.square_size,
-              ),
-            )?;
-          }
-          Concept::Dogwood => {
-            if unit.blood < -35 {
+        unsafe {
+          let unit = *game.game_state.offset(i as isize);
+
+          match unit.concept {
+            Concept::Sunflower => {
               self.canvas.copy(
-                &textures.dogwood,
-                None,
-                Rect::new(
-                  ((i % self.world_width) * self.square_size) as i32,
-                  ((i / self.world_width) * self.square_size) as i32,
-                  self.square_size,
-                  self.square_size,
-                ),
-              )?;
-            } else if unit.blood < -20 {
-              self.canvas.copy(
-                &textures.dogwood_faded,
-                None,
-                Rect::new(
-                  ((i % self.world_width) * self.square_size) as i32,
-                  ((i / self.world_width) * self.square_size) as i32,
-                  self.square_size,
-                  self.square_size,
-                ),
-              )?;
-            } else if unit.blood < -5 {
-              self.canvas.copy(
-                &textures.dogwood_relic,
-                None,
-                Rect::new(
-                  ((i % self.world_width) * self.square_size) as i32,
-                  ((i / self.world_width) * self.square_size) as i32,
-                  self.square_size,
-                  self.square_size,
-                ),
-              )?;
-            } else {
-              self.canvas.copy(
-                &textures.dogwood_ruin,
+                &textures.sunflower,
                 None,
                 Rect::new(
                   ((i % self.world_width) * self.square_size) as i32,
@@ -303,11 +245,69 @@ impl Graphics {
                 ),
               )?;
             }
+            Concept::Rose => {
+              self.canvas.copy(
+                &textures.rose,
+                None,
+                Rect::new(
+                  ((i % self.world_width) * self.square_size) as i32,
+                  ((i / self.world_width) * self.square_size) as i32,
+                  self.square_size,
+                  self.square_size,
+                ),
+              )?;
+            }
+            Concept::Dogwood => {
+              if unit.blood < -35 {
+                self.canvas.copy(
+                  &textures.dogwood,
+                  None,
+                  Rect::new(
+                    ((i % self.world_width) * self.square_size) as i32,
+                    ((i / self.world_width) * self.square_size) as i32,
+                    self.square_size,
+                    self.square_size,
+                  ),
+                )?;
+              } else if unit.blood < -20 {
+                self.canvas.copy(
+                  &textures.dogwood_faded,
+                  None,
+                  Rect::new(
+                    ((i % self.world_width) * self.square_size) as i32,
+                    ((i / self.world_width) * self.square_size) as i32,
+                    self.square_size,
+                    self.square_size,
+                  ),
+                )?;
+              } else if unit.blood < -5 {
+                self.canvas.copy(
+                  &textures.dogwood_relic,
+                  None,
+                  Rect::new(
+                    ((i % self.world_width) * self.square_size) as i32,
+                    ((i / self.world_width) * self.square_size) as i32,
+                    self.square_size,
+                    self.square_size,
+                  ),
+                )?;
+              } else {
+                self.canvas.copy(
+                  &textures.dogwood_ruin,
+                  None,
+                  Rect::new(
+                    ((i % self.world_width) * self.square_size) as i32,
+                    ((i / self.world_width) * self.square_size) as i32,
+                    self.square_size,
+                    self.square_size,
+                  ),
+                )?;
+              }
+            }
+            _ => {}
           }
-          _ => {}
         }
       }
-
       if self.show_fps {
         let surface = font
           .render(&format!("{:03}", frame_rate))

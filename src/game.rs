@@ -1,201 +1,332 @@
-#[derive(Copy, Clone)]
-pub enum State {
-  Paused,
-  Playing,
-}
+use ash::version::DeviceV1_0;
+use ash::vk;
+use std::cell::RefCell;
+use std::ffi::CString;
+use std::path::PathBuf;
+use std::rc::Rc;
+use wyzoid::high::job::JobTimingsBuilder;
+use wyzoid::low::vkcmd;
+use wyzoid::low::vkdescriptor;
+use wyzoid::low::vkfence;
+use wyzoid::low::vkmem;
+use wyzoid::low::vkpipeline;
+use wyzoid::low::vkshader;
+use wyzoid::low::vkstate::VulkanState;
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum Concept {
-  Soil = 0,
-  Sunflower = 1,
-  Rose = 2,
-  Dogwood = 3,
+    Soil = 0,
+    Sunflower = 1,
+    Rose = 2,
+    Dogwood = 3,
 }
 
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct CellState {
-  pub concept: Concept,
-  pub blood: i32,
+    pub concept: Concept,
+    pub blood: i32,
 }
 
-pub struct GameOfLife {
-  pub playground: Vec<CellState>,
-  state: State,
-  world_height: u32,
-  world_width: u32,
+pub struct Runner {
+    vulkan: Rc<VulkanState>,
+    memory: vkmem::VkMem,
+    world_width: u32,
+    timing: JobTimingsBuilder,
+    fence: vkfence::VkFence,
+    cmd_pool: vkcmd::VkCmdPool,
+    flip: i32,
+    pub game_state: *const CellState,
+    pub game_size: i32,
+    left_data: *mut CellState,
+    right_data: *mut CellState,
+    param_data: *mut ShaderParams,
 }
 
-fn to_dust(square: &mut CellState) {
-  square.concept = Concept::Soil;
-  square.blood = 0;
+#[repr(C)]
+struct ShaderParams {
+    world_width: u32,
+    flip: i32,
 }
 
-impl GameOfLife {
-  pub fn new(world_height: u32, world_width: u32) -> GameOfLife {
-    let mut playground = vec![
-      CellState {
-        concept: Concept::Soil,
-        blood: 0
-      };
-      (world_width * world_height) as usize
-    ];
+impl Runner {
+    pub fn new(world_width: u32) -> Runner {
+        let mut state = vec![
+            CellState {
+                concept: Concept::Soil,
+                blood: 0
+            };
+            (world_width * world_width) as usize
+        ];
 
-    // let's make a nice default pattern
-    for i in 1..(world_height - 1) {
-      playground[(1 + i * world_width) as usize].concept = Concept::Sunflower;
-      playground[((world_width - 2) + i * world_width) as usize].concept = Concept::Sunflower;
-    }
-    for j in 2..(world_width - 2) {
-      playground[(world_width + j) as usize].concept = Concept::Sunflower;
-      playground[((world_height - 2) * world_width + j) as usize].concept = Concept::Sunflower;
-    }
-
-    GameOfLife {
-      playground: playground,
-      state: State::Paused,
-      world_height: world_height,
-      world_width: world_width,
-    }
-  }
-
-  pub fn get(&self, x: i32, y: i32) -> Option<CellState> {
-    if x >= 0 && y >= 0 && (x as u32) < self.world_width && (y as u32) < self.world_height {
-      Some(self.playground[(x as u32 + (y as u32) * self.world_width) as usize])
-    } else {
-      None
-    }
-  }
-
-  pub fn get_mut(&mut self, x: i32, y: i32) -> Option<&mut Concept> {
-    if x >= 0 && y >= 0 && (x as u32) < self.world_width && (y as u32) < self.world_height {
-      Some(&mut self.playground[(x as u32 + (y as u32) * self.world_width) as usize].concept)
-    } else {
-      None
-    }
-  }
-
-  pub fn toggle_state(&mut self) {
-    self.state = match self.state {
-      State::Paused => State::Playing,
-      State::Playing => State::Paused,
-    }
-  }
-
-  pub fn state(&self) -> State {
-    self.state
-  }
-
-  fn check_nearby<FCheck>(
-    &self,
-    x: u32,
-    y: u32,
-    radius_outer: i32,
-    radius_inner: i32,
-    mut check: FCheck,
-  ) where
-    FCheck: FnMut(&CellState) -> bool,
-  {
-    for i in 0 - radius_outer..1 + radius_outer {
-      for j in 0 - radius_outer..1 + radius_outer {
-        if !(i.abs() < radius_inner && j.abs() < radius_inner) {
-          let peek_x: i32 = (x as i32) + i;
-          let peek_y: i32 = (y as i32) + j;
-          match self.get(peek_x, peek_y) {
-            Some(cell) => {
-              if check(&cell) {
-                return;
-              }
-            }
-            _ => {}
-          }
+        // let's make a nice default pattern
+        for i in 1..(world_width - 1) {
+            state[(1 + i * world_width) as usize].concept = Concept::Sunflower;
+            state[((world_width - 2) + i * world_width) as usize].concept = Concept::Sunflower;
         }
-      }
+        for j in 2..(world_width - 2) {
+            state[(world_width + j) as usize].concept = Concept::Sunflower;
+            state[((world_width - 2) * world_width + j) as usize].concept = Concept::Sunflower;
+        }
+
+        // Memory init.
+        let mut timing: JobTimingsBuilder = JobTimingsBuilder::new();
+        timing = timing.start_upload();
+        let shader_path = PathBuf::from("target/game.spv");
+        let vulkan = Rc::new(wyzoid::low::vkstate::init_vulkan());
+        let buffer_size: u64 = (state.len() * std::mem::size_of::<CellState>()) as u64;
+
+        // Make two buffers and bind them to GPU memory
+        let mut left_buffer = vkmem::VkBuffer::new(vulkan.clone(), buffer_size);
+        let mut right_buffer = vkmem::VkBuffer::new(vulkan.clone(), buffer_size);
+        let mut param_buffer =
+            vkmem::VkBuffer::new(vulkan.clone(), std::mem::size_of::<ShaderParams>() as u64);
+        let (mem_size, offsets) = vkmem::compute_non_overlapping_buffer_alignment(&vec![
+            &left_buffer,
+            &right_buffer,
+            &param_buffer,
+        ]);
+        let memory = vkmem::VkMem::find_mem(vulkan.clone(), mem_size)
+            .expect("[ERR] Could not find a memory type fitting our need.");
+
+        left_buffer.bind(memory.mem, offsets[0]);
+        right_buffer.bind(memory.mem, offsets[1]);
+        param_buffer.bind(memory.mem, offsets[2]);
+
+        // Try mapping all three buffers here, and leave them mapped
+        let left_data: *mut CellState = unsafe {
+            vulkan
+                .device
+                .map_memory(
+                    memory.mem,
+                    left_buffer.offset,
+                    left_buffer.size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("[ERR] Could not map memory.") as *mut CellState
+        };
+        unsafe {
+            std::ptr::copy_nonoverlapping(state.as_ptr(), left_data, state.len());
+        }
+        let right_data: *mut CellState = unsafe {
+            vulkan
+                .device
+                .map_memory(
+                    memory.mem,
+                    right_buffer.offset,
+                    right_buffer.size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("[ERR] Could not map memory.") as *mut CellState
+        };
+        let param_data: *mut ShaderParams = unsafe {
+            vulkan
+                .device
+                .map_memory(
+                    memory.mem,
+                    param_buffer.offset,
+                    param_buffer.size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("[ERR] Could not map memory.") as *mut ShaderParams
+        };
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                vec![ShaderParams {
+                    world_width: world_width,
+                    flip: 0,
+                }]
+                .as_ptr(),
+                param_data,
+                1,
+            );
+        }
+        timing = timing.stop_upload();
+
+        // Shaders
+        timing = timing.start_shader();
+
+        // Create the shader, and bind to its layouts.
+        let shader = Rc::new(RefCell::new(vkshader::VkShader::new(
+            vulkan.clone(),
+            &shader_path,
+            CString::new("main").unwrap(),
+        )));
+        shader.borrow_mut().add_layout_binding(
+            0,
+            1,
+            vk::DescriptorType::STORAGE_BUFFER,
+            vk::ShaderStageFlags::COMPUTE,
+        );
+        shader.borrow_mut().add_layout_binding(
+            1,
+            1,
+            vk::DescriptorType::STORAGE_BUFFER,
+            vk::ShaderStageFlags::COMPUTE,
+        );
+        shader.borrow_mut().add_layout_binding(
+            2,
+            1,
+            vk::DescriptorType::STORAGE_BUFFER,
+            vk::ShaderStageFlags::COMPUTE,
+        );
+        shader.borrow_mut().create_pipeline_layout();
+        let pipeline_layout = shader.borrow().pipeline.unwrap();
+        let compute_pipeline = vkpipeline::VkComputePipeline::new(vulkan.clone(), &shader.borrow());
+        let mut shader_descriptor = vkdescriptor::VkDescriptor::new(vulkan.clone(), shader.clone());
+        let mut write_descriptor = vkdescriptor::VkWriteDescriptor::new(vulkan.clone());
+
+        shader_descriptor.add_pool_size(3, vk::DescriptorType::STORAGE_BUFFER);
+        shader_descriptor.create_pool(1);
+        shader_descriptor.create_set();
+
+        let desc_set: vk::DescriptorSet = *shader_descriptor.get_first_set().unwrap();
+        let mut buffers_nfos: Vec<Vec<vk::DescriptorBufferInfo>> = Vec::new();
+
+        // Add write descriptors for our two buffers
+        write_descriptor.add_buffer(left_buffer.buffer, 0, left_buffer.size);
+        buffers_nfos.push(vec![write_descriptor.buffer_descriptors[0]]);
+        write_descriptor.add_write_descriptors(
+            desc_set,
+            vk::DescriptorType::STORAGE_BUFFER,
+            &buffers_nfos[0],
+            0,
+            0,
+        );
+        write_descriptor.add_buffer(right_buffer.buffer, 0, right_buffer.size);
+        buffers_nfos.push(vec![write_descriptor.buffer_descriptors[1]]);
+        write_descriptor.add_write_descriptors(
+            desc_set,
+            vk::DescriptorType::STORAGE_BUFFER,
+            &buffers_nfos[1],
+            1,
+            0,
+        );
+        write_descriptor.add_buffer(param_buffer.buffer, 0, param_buffer.size);
+        buffers_nfos.push(vec![write_descriptor.buffer_descriptors[2]]);
+        write_descriptor.add_write_descriptors(
+            desc_set,
+            vk::DescriptorType::STORAGE_BUFFER,
+            &buffers_nfos[2],
+            2,
+            0,
+        );
+
+        write_descriptor.update_descriptors_sets();
+
+        timing = timing.stop_shader();
+
+        // Command buffers
+        timing = timing.start_cmd();
+        let mut cmd_pool = vkcmd::VkCmdPool::new(vulkan.clone());
+
+        let cmd_buffer = cmd_pool.create_cmd_buffer(vk::CommandBufferLevel::PRIMARY);
+        cmd_pool.begin_cmd(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT, cmd_buffer);
+        cmd_pool.bind_pipeline(
+            compute_pipeline.pipeline,
+            vk::PipelineBindPoint::COMPUTE,
+            cmd_buffer,
+        );
+        cmd_pool.bind_descriptor(
+            pipeline_layout,
+            vk::PipelineBindPoint::COMPUTE,
+            &shader_descriptor.set,
+            cmd_buffer,
+        );
+
+        cmd_pool.dispatch((state.len() / 10) as u32, 1, 1, cmd_buffer);
+
+        // Memory barrier
+        let mut buffer_barrier: Vec<vk::BufferMemoryBarrier> = Vec::new();
+        buffer_barrier.push(
+            vk::BufferMemoryBarrier::builder()
+                .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .buffer(left_buffer.buffer)
+                .size(vk::WHOLE_SIZE)
+                .build(),
+        );
+        buffer_barrier.push(
+            vk::BufferMemoryBarrier::builder()
+                .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .buffer(right_buffer.buffer)
+                .size(vk::WHOLE_SIZE)
+                .build(),
+        );
+        buffer_barrier.push(
+            vk::BufferMemoryBarrier::builder()
+                .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .buffer(param_buffer.buffer)
+                .size(vk::WHOLE_SIZE)
+                .build(),
+        );
+
+        unsafe {
+            vulkan.device.cmd_pipeline_barrier(
+                cmd_pool.cmd_buffers[cmd_buffer],
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &buffer_barrier,
+                &[],
+            );
+        }
+
+        cmd_pool.end_cmd(cmd_buffer);
+        timing = timing.stop_cmd();
+
+        // Execution
+        let fence = vkfence::VkFence::new(vulkan.clone(), false);
+        return Runner {
+            vulkan,
+            memory,
+            game_state: left_data,
+            game_size: (world_width * world_width) as i32,
+            world_width,
+            timing,
+            fence,
+            cmd_pool,
+            flip: 0,
+            left_data,
+            right_data,
+            param_data,
+        };
     }
-  }
 
-  pub fn update(&mut self) {
-    let mut new_playground = self.playground.to_vec();
-
-    for (u, square) in new_playground.iter_mut().enumerate() {
-      let u = u as u32;
-      let x = u % self.world_width;
-      let y = u / self.world_width;
-      if square.concept == Concept::Soil || square.concept == Concept::Sunflower {
-        let mut count: u32 = 0;
-        self.check_nearby(x, y, 1, 1, |cell| {
-          if cell.concept == Concept::Sunflower {
-            count += 1;
-          }
-          return false;
-        });
-        if square.concept == Concept::Sunflower && (count > 3 || count < 2) {
-          // Death
-          let mut loved = false;
-          self.check_nearby(x, y, 2, 2, |cell| {
-            if cell.concept == Concept::Rose {
-              loved = true;
-              return true;
-            }
-            return false;
-          });
-
-          if loved {
-            square.blood += 1;
-          } else if square.blood > 2 {
-            let mut love = false;
-            self.check_nearby(x, y, 2, 2, |cell| {
-              if cell.concept == Concept::Dogwood {
-                love = true;
-                return true;
-              }
-              return false;
-            });
-            if love {
-              square.concept = Concept::Rose;
-            } else {
-              to_dust(square);
-            }
-          } else {
-            to_dust(square);
-          }
-        } else if square.concept == Concept::Soil {
-          if count == 3 {
-            // Life
-            square.concept = Concept::Sunflower;
-          } else if count == 8 {
-            // Compassion
-            square.concept = Concept::Rose;
-          }
+    pub fn execute(&mut self) {
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                vec![ShaderParams {
+                    world_width: self.world_width,
+                    flip: self.flip,
+                }]
+                .as_ptr(),
+                self.param_data,
+                1,
+            );
         }
-      } else if square.concept == Concept::Rose {
-        let mut suffering = 0;
-        self.check_nearby(x, y, 2, 1, |cell| {
-          suffering += cell.blood;
-          return false;
-        });
 
-        if suffering >= 12 {
-          // Sacrifice
-          square.concept = Concept::Dogwood;
-          square.blood = -50;
+        self.timing = self.timing.start_execution();
+        let queue = unsafe {
+            self.vulkan
+                .device
+                .get_device_queue(self.vulkan.queue_family_index, 0)
+        };
+        self.cmd_pool.submit(queue, Some(self.fence.fence));
+
+        while self.fence.status() != vkfence::FenceStates::SIGNALED {
+            self.fence.wait(1 * 1000 * 1000 * 1000);
         }
-      } else if square.concept == Concept::Dogwood {
-        square.blood += 1;
-        if square.blood >= 0 {
-          // Forgotten
-          to_dust(square);
-        }
-      }
+        self.fence.reset();
+        self.timing = self.timing.stop_execution();
+        self.flip = if self.flip == 0 { 1 } else { 0 };
+        self.game_state = if self.flip == 0 {
+            self.left_data
+        } else {
+            self.right_data
+        };
     }
-    self.playground = new_playground;
-  }
-}
-
-impl<'a> IntoIterator for &'a GameOfLife {
-  type Item = &'a CellState;
-  type IntoIter = ::std::slice::Iter<'a, CellState>;
-  fn into_iter(self) -> ::std::slice::Iter<'a, CellState> {
-    self.playground.iter()
-  }
 }

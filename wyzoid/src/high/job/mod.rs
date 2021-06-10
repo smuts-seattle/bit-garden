@@ -238,8 +238,9 @@ impl<'a, T> Job<'a, T> {
             .iter()
             .map(|size| vkmem::VkBuffer::new(self.state.vulkan.clone(), *size))
             .collect();
-        let (mem_size, offsets) =
-            vkmem::compute_non_overlapping_buffer_alignment(&self.state.buffers);
+        let (mem_size, offsets) = vkmem::compute_non_overlapping_buffer_alignment(
+            &self.state.buffers.iter().map(|s| (s)).collect(),
+        );
         self.state.memory = Some(
             vkmem::VkMem::find_mem(self.state.vulkan.clone(), mem_size)
                 .expect("[ERR] Could not find a memory type fitting our need."),

@@ -11,19 +11,26 @@ struct CellState {
   int blood;
 };
 
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
-
-layout(std430, set = 0, binding = 0) buffer Curr { 
-  CellState curr[]; 
+struct ShaderParams {
+  uint world_width;
+  int flip;
 };
 
-layout(std430, set = 0, binding = 1) buffer Next { 
-  CellState next[]; 
+layout(local_size_x = 10, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) buffer Left { 
+  CellState left[]; 
 };
 
-layout(std430, set = 0, binding = 2) buffer Width { 
-  CellState world_width_buffer[]; 
+layout(std430, set = 0, binding = 1) buffer Right { 
+  CellState right[]; 
 };
+
+layout(std430, set = 0, binding = 2) buffer Params { 
+  ShaderParams params; 
+};
+
+#define curr(_x) (flip ? right[_x] : left[_x])
 
 #define check_nearby(_x, _y, _radius_outer, _radius_inner, _check) \
 for (int i = 0 - _radius_outer; i <= _radius_outer; i++) {\
@@ -32,7 +39,7 @@ for (int i = 0 - _radius_outer; i <= _radius_outer; i++) {\
       int peek_x = int(_x) + i;\
       int peek_y = int(_y) + j;\
       if (peek_x >= 0 && peek_y >= 0 && peek_x < world_width && peek_y < world_width) {\
-        CellState cell = curr[peek_x + (peek_y * world_width)];\
+        CellState cell = curr(peek_x + (peek_y * world_width));\
         _check\
       }\
     }\
@@ -45,9 +52,11 @@ void to_dust(inout CellState square) {
 }
 
 void main() {
-  uint world_width = world_width_buffer[0].blood;
+  uint world_width = params.world_width;
+  bool flip = params.flip != 0;
   uint idx = gl_GlobalInvocationID.x;
-  CellState square = curr[idx];
+
+  CellState square = curr(idx);
   uint x = idx % world_width;
   uint y = idx / world_width;
 
@@ -116,5 +125,10 @@ void main() {
     }
   }
     
-  next[idx] = square;
+  if (flip) {
+    left[idx] = square;
+  }
+  else {
+    right[idx] = square;
+  }
 }

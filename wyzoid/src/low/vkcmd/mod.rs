@@ -113,11 +113,7 @@ impl VkCmdPool {
         unsafe {
             self.state
                 .device
-                .queue_submit(
-                    queue,
-                    &[submit_info.build()],
-                    fence.unwrap_or(vk::Fence::null()),
-                )
+                .queue_submit(queue, &[submit_info.build()], fence.unwrap())
                 .expect("[ERR] Could not submit queue.")
         };
     }

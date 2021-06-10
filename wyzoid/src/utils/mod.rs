@@ -1,4 +1,3 @@
-use ash::extensions::khr::Display;
 use log::error;
 use rand::Rng;
 use std::ffi::CString;
