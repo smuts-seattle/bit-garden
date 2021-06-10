@@ -11,9 +11,17 @@ struct CellState {
   int blood;
 };
 
+struct Mutation {
+  uint x;
+  uint y;
+  int concept;
+};
+
 struct ShaderParams {
   uint world_width;
   int flip;
+  int mutations_size;
+  Mutation mutations[100];
 };
 
 layout(local_size_x = 10, local_size_y = 1, local_size_z = 1) in;
@@ -59,6 +67,19 @@ void main() {
   CellState square = curr(idx);
   uint x = idx % world_width;
   uint y = idx / world_width;
+
+  for (int i = 0; i < params.mutations_size; i++) {
+    if (params.mutations[i].x == x && params.mutations[i].y == y) {
+      square.concept = params.mutations[i].concept;
+      if (flip) {
+        left[idx] = square;
+      }
+      else {
+        right[idx] = square;
+      }
+      return;
+    }
+  }
 
   if (square.concept == Soil || square.concept == Sunflower) {
     uint count = 0;

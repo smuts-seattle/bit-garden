@@ -28,6 +28,14 @@ pub struct CellState {
     pub blood: i32,
 }
 
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct Mutation {
+    pub x: u32,
+    pub y: u32,
+    pub concept: Concept,
+}
+
 pub struct Runner {
     vulkan: Rc<VulkanState>,
     memory: vkmem::VkMem,
@@ -41,12 +49,17 @@ pub struct Runner {
     left_data: *mut CellState,
     right_data: *mut CellState,
     param_data: *mut ShaderParams,
+    paused: bool,
+
+    mutations: Vec<Mutation>,
 }
 
 #[repr(C)]
 struct ShaderParams {
     world_width: u32,
     flip: i32,
+    mutations_size: u32,
+    mutations: [Mutation; 100],
 }
 
 impl Runner {
@@ -135,6 +148,12 @@ impl Runner {
                 vec![ShaderParams {
                     world_width: world_width,
                     flip: 0,
+                    mutations_size: 0,
+                    mutations: [Mutation {
+                        x: 0,
+                        y: 0,
+                        concept: Concept::Soil,
+                    }; 100],
                 }]
                 .as_ptr(),
                 param_data,
@@ -293,15 +312,43 @@ impl Runner {
             left_data,
             right_data,
             param_data,
+            paused: false,
+            mutations: vec![],
         };
     }
 
+    pub fn toggle_pause(&mut self) {
+        self.paused = !self.paused;
+    }
+
+    pub fn mutate(&mut self, mutation: Mutation) {
+        self.mutations.insert(0, mutation);
+    }
+
     pub fn execute(&mut self) {
+        if self.paused {
+            return;
+        };
+        let queued_mutations = self
+            .mutations
+            .splice(0..(std::cmp::min(self.mutations.len(), 100)), vec![]);
+        let mut m_array = [Mutation {
+            x: 0,
+            y: 0,
+            concept: Concept::Soil,
+        }; 100];
+        let m_count = queued_mutations.len() as u32;
+        for (i, m) in queued_mutations.enumerate() {
+            m_array[i] = m;
+        }
+
         unsafe {
             std::ptr::copy_nonoverlapping(
                 vec![ShaderParams {
                     world_width: self.world_width,
                     flip: self.flip,
+                    mutations_size: m_count,
+                    mutations: m_array,
                 }]
                 .as_ptr(),
                 self.param_data,

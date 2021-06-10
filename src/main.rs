@@ -2,11 +2,12 @@ mod game;
 mod graphics;
 
 use crate::game::Concept;
+use crate::game::Mutation;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
 
-pub const SQUARE_SIZE: u32 = 4;
+pub const SQUARE_SIZE: u32 = 8;
 pub const DEFAULT_PLAYGROUND_WIDTH: u32 = 100;
 pub const DEFAULT_PLAYGROUND_HEIGHT: u32 = 100;
 pub const DEFAULT_FRAME_RATE: u32 = 2;
@@ -35,13 +36,11 @@ pub fn main() -> Result<(), String> {
       .expect("failed to load graphics");
 
   let mut runner = game::Runner::new(playground_width);
-  let mut last_change: (u32, u32) = (0, 0);
-  let mut curr_type = Concept::Sunflower;
 
   graphics
     .run(
       &mut runner,
-      |/*game, */ event: Event| {
+      |game, event: Event| {
         match event {
           Event::Quit { .. }
           | Event::KeyDown {
@@ -55,7 +54,7 @@ pub fn main() -> Result<(), String> {
             repeat: false,
             ..
           } => {
-            //game.toggle_state();
+            game.toggle_pause();
           }
           Event::MouseButtonDown {
             x,
@@ -63,39 +62,26 @@ pub fn main() -> Result<(), String> {
             mouse_btn: MouseButton::Left,
             ..
           } => {
-            /*let x = (x as u32) / SQUARE_SIZE;
+            let x = (x as u32) / SQUARE_SIZE;
             let y = (y as u32) / SQUARE_SIZE;
-            match game.get_mut(x as i32, y as i32) {
-              Some(square) => {
-                if *square == Concept::Soil {
-                  *square = Concept::Sunflower;
-                } else if *square == Concept::Sunflower {
-                  *square = Concept::Rose
-                } else {
-                  *square = Concept::Soil;
-                }
-                curr_type = *square;
-                last_change = (x, y);
-              }
-              None => unreachable!(),
-            };*/
+            game.mutate(Mutation {
+              x,
+              y,
+              concept: Concept::Rose,
+            })
           }
           Event::MouseMotion {
             x, y, mousestate, ..
           } => {
-            /*if mousestate.left() {
+            if mousestate.left() {
               let x = (x as u32) / SQUARE_SIZE;
               let y = (y as u32) / SQUARE_SIZE;
-              if (x, y) != last_change {
-                last_change = (x, y);
-                match game.get_mut(x as i32, y as i32) {
-                  Some(square) => {
-                    *square = curr_type;
-                  }
-                  None => unreachable!(),
-                };
-              }
-            }*/
+              game.mutate(Mutation {
+                x,
+                y,
+                concept: Concept::Rose,
+              })
+            }
           }
           _ => {}
         }
@@ -103,9 +89,6 @@ pub fn main() -> Result<(), String> {
       },
       |runner| {
         runner.execute();
-        // update the game loop here
-        /*if let game::State::Playing = game.state() {
-        };*/
       },
     )
     .expect("Error in main loop");

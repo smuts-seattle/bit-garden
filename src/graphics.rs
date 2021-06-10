@@ -193,7 +193,7 @@ impl Graphics {
     mut on_frame: FFrame,
   ) -> Result<(), String>
   where
-    FEvent: FnMut(/*&mut GameOfLife,*/ Event) -> bool,
+    FEvent: FnMut(&mut Runner, Event) -> bool,
     FFrame: FnMut(&mut Runner),
   {
     let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string())?;
@@ -212,7 +212,7 @@ impl Graphics {
     'exit: loop {
       // get the inputs here
       for event in event_pump.poll_iter() {
-        if on_event(event) {
+        if on_event(game, event) {
           break 'exit Ok(());
         }
       }
