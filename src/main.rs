@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate rocket;
+
 mod game;
 mod graphics;
 
@@ -9,10 +12,15 @@ use sdl2::mouse::MouseButton;
 
 pub const SQUARE_SIZE: u32 = 8;
 pub const DEFAULT_PLAYGROUND_WIDTH: u32 = 100;
-pub const DEFAULT_PLAYGROUND_HEIGHT: u32 = 100;
 pub const DEFAULT_FRAME_RATE: u32 = 2;
 
-pub fn main() -> Result<(), String> {
+#[get("/")]
+fn index() -> &'static str {
+  "Hello, world!"
+}
+
+#[launch]
+fn rocket() -> _ {
   let args: Vec<String> = std::env::args().collect();
   let playground_width = if args.len() > 1 {
     str::parse::<u32>(&args[1]).expect("First argument must be integer width")
@@ -31,49 +39,38 @@ pub fn main() -> Result<(), String> {
     0
   };
 
-  let mut graphics =
-    graphics::Graphics::new(SQUARE_SIZE, playground_width, frame_rate, show_fps == 1)
-      .expect("failed to load graphics");
+  std::thread::spawn(move || {
+    let mut graphics =
+      graphics::Graphics::new(SQUARE_SIZE, playground_width, frame_rate, show_fps == 1)
+        .expect("failed to load graphics");
 
-  let mut runner = game::Runner::new(playground_width);
+    let mut runner = game::Runner::new(playground_width);
 
-  graphics
-    .run(
-      &mut runner,
-      |game, event: Event| {
-        match event {
-          Event::Quit { .. }
-          | Event::KeyDown {
-            keycode: Some(Keycode::Escape),
-            ..
-          } => {
-            return true;
-          }
-          Event::KeyDown {
-            keycode: Some(Keycode::Space),
-            repeat: false,
-            ..
-          } => {
-            game.toggle_pause();
-          }
-          Event::MouseButtonDown {
-            x,
-            y,
-            mouse_btn: MouseButton::Left,
-            ..
-          } => {
-            let x = (x as u32) / SQUARE_SIZE;
-            let y = (y as u32) / SQUARE_SIZE;
-            game.mutate(Mutation {
+    graphics
+      .run(
+        &mut runner,
+        |game, event: Event| {
+          match event {
+            Event::Quit { .. }
+            | Event::KeyDown {
+              keycode: Some(Keycode::Escape),
+              ..
+            } => {
+              return true;
+            }
+            Event::KeyDown {
+              keycode: Some(Keycode::Space),
+              repeat: false,
+              ..
+            } => {
+              game.toggle_pause();
+            }
+            Event::MouseButtonDown {
               x,
               y,
-              concept: Concept::Rose,
-            })
-          }
-          Event::MouseMotion {
-            x, y, mousestate, ..
-          } => {
-            if mousestate.left() {
+              mouse_btn: MouseButton::Left,
+              ..
+            } => {
               let x = (x as u32) / SQUARE_SIZE;
               let y = (y as u32) / SQUARE_SIZE;
               game.mutate(Mutation {
@@ -82,16 +79,29 @@ pub fn main() -> Result<(), String> {
                 concept: Concept::Rose,
               })
             }
+            Event::MouseMotion {
+              x, y, mousestate, ..
+            } => {
+              if mousestate.left() {
+                let x = (x as u32) / SQUARE_SIZE;
+                let y = (y as u32) / SQUARE_SIZE;
+                game.mutate(Mutation {
+                  x,
+                  y,
+                  concept: Concept::Rose,
+                })
+              }
+            }
+            _ => {}
           }
-          _ => {}
-        }
-        return false;
-      },
-      |runner| {
-        runner.execute();
-      },
-    )
-    .expect("Error in main loop");
+          return false;
+        },
+        |runner| {
+          runner.execute();
+        },
+      )
+      .expect("Error in main loop");
+  });
 
-  Ok(())
+  rocket::build().mount("/", routes![index])
 }

@@ -1,6 +1,5 @@
 extern crate sdl2;
 
-use crate::game::CellState;
 use crate::game::Concept;
 use crate::game::Runner;
 use sdl2::event::Event;
