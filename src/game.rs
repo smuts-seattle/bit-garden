@@ -14,6 +14,7 @@ use wyzoid::low::vkshader;
 use wyzoid::low::vkstate::VulkanState;
 
 #[derive(PartialEq, Clone, Copy)]
+#[repr(C)]
 pub enum Concept {
     Soil = 0,
     Sunflower = 1,
@@ -36,6 +37,14 @@ pub struct Mutation {
     pub concept: Concept,
 }
 
+#[repr(C)]
+struct ShaderParams {
+    world_width: u32,
+    flip: i32,
+    mutations_size: u32,
+    mutations: [Mutation; 100],
+}
+
 pub struct Runner {
     vulkan: Rc<VulkanState>,
     memory: vkmem::VkMem,
@@ -52,14 +61,6 @@ pub struct Runner {
     paused: bool,
 
     mutations: Vec<Mutation>,
-}
-
-#[repr(C)]
-struct ShaderParams {
-    world_width: u32,
-    flip: i32,
-    mutations_size: u32,
-    mutations: [Mutation; 100],
 }
 
 impl Runner {
@@ -253,7 +254,7 @@ impl Runner {
             cmd_buffer,
         );
 
-        cmd_pool.dispatch((state.len() / 10) as u32, 1, 1, cmd_buffer);
+        cmd_pool.dispatch((state.len() / 25) as u32, 1, 1, cmd_buffer);
 
         // Memory barrier
         let mut buffer_barrier: Vec<vk::BufferMemoryBarrier> = Vec::new();
