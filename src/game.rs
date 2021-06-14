@@ -1,10 +1,13 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
-use core::sync::atomic::AtomicPtr;
 use std::cell::RefCell;
 use std::ffi::CString;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::atomic::AtomicI32;
+use std::sync::atomic::AtomicPtr;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use wyzoid::high::job::JobTimingsBuilder;
 use wyzoid::low::vkcmd;
@@ -55,14 +58,18 @@ pub struct Runner {
     fence: vkfence::VkFence,
     cmd_pool: vkcmd::VkCmdPool,
     flip: i32,
-    pub game_state: Arc<CellState>,
-    pub game_size: i32,
     left_data: *mut CellState,
     right_data: *mut CellState,
     param_data: *mut ShaderParams,
     paused: bool,
 
     mutations: Vec<Mutation>,
+    pub game_state: Arc<GameState>,
+}
+
+pub struct GameState {
+    pub game_data: AtomicPtr<CellState>,
+    pub game_size: AtomicI32,
 }
 
 impl Runner {
@@ -305,8 +312,10 @@ impl Runner {
         return Runner {
             vulkan,
             memory,
-            game_state: unsafe { Arc::from_raw(left_data) },
-            game_size: (world_width * world_width) as i32,
+            game_state: Arc::new(GameState {
+                game_data: AtomicPtr::new(left_data),
+                game_size: AtomicI32::new((world_width * world_width) as i32),
+            }),
             world_width,
             timing,
             fence,
@@ -373,12 +382,14 @@ impl Runner {
         self.fence.reset();
         self.timing = self.timing.stop_execution();
         self.flip = if self.flip == 0 { 1 } else { 0 };
-        unsafe {
-            self.game_state = Arc::from_raw(if self.flip == 0 {
+
+        self.game_state.game_data.store(
+            if self.flip == 0 {
                 self.left_data
             } else {
                 self.right_data
-            })
-        }
+            },
+            Relaxed,
+        );
     }
 }

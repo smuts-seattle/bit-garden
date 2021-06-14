@@ -5,12 +5,10 @@ mod game;
 mod graphics;
 
 use crate::game::CellState;
-use crate::game::Concept;
-use crate::game::Mutation;
+use crate::game::GameState;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
-use std::sync::atomic::AtomicPtr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -49,11 +47,11 @@ fn rocket() -> _ {
     0
   };
 
-  let (snd, rcv) = std::sync::mpsc::channel::<Arc<CellState>>();
+  let (snd_state, rcv_state) = std::sync::mpsc::channel::<Arc<GameState>>();
 
   std::thread::spawn(move || {
     let mut runner = game::Runner::new(playground_width);
-    snd.send(runner.game_state.clone());
+    snd_state.send(runner.game_state.clone()).unwrap();
 
     let clock = SystemTime::now();
     let mut next_frame: u128 = 0;
@@ -69,7 +67,7 @@ fn rocket() -> _ {
     }
   });
 
-  let data = rcv.recv().unwrap();
+  let data = rcv_state.recv().unwrap();
   if render_graphics == 1 {
     std::thread::spawn(move || {
       let mut graphics =
@@ -77,7 +75,7 @@ fn rocket() -> _ {
           .expect("failed to load graphics");
 
       graphics
-        .run(data, playground_width * playground_width, |event: Event| {
+        .run(data, |event: Event| {
           match event {
             Event::Quit { .. }
             | Event::KeyDown {

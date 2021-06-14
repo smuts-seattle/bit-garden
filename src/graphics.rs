@@ -3,6 +3,7 @@ extern crate sdl2;
 use crate::game::Concept;
 use crate::game::Runner;
 use crate::CellState;
+use crate::GameState;
 use core::sync::atomic::AtomicPtr;
 use sdl2::event::Event;
 use sdl2::pixels::Color;
@@ -10,6 +11,7 @@ use sdl2::rect::Rect;
 use sdl2::render::{Canvas, Texture, TextureCreator};
 use sdl2::video::{Window, WindowContext};
 use std::path::Path;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
 const SOIL_COLOR: Color = Color::RGB(53, 48, 40);
@@ -188,12 +190,7 @@ impl Graphics {
     })
   }
 
-  pub fn run<FEvent>(
-    &mut self,
-    state: Arc<CellState>,
-    state_size: u32,
-    mut on_event: FEvent,
-  ) -> Result<(), String>
+  pub fn run<FEvent>(&mut self, state: Arc<GameState>, mut on_event: FEvent) -> Result<(), String>
   where
     FEvent: FnMut(Event) -> bool,
   {
@@ -209,7 +206,7 @@ impl Graphics {
     let textures =
       Graphics::dummy_texture(&mut self.canvas, &self.texture_creator, self.square_size)
         .expect("could not build square texture");
-    let raw_state = Arc::into_raw(state);
+
     'exit: loop {
       // get the inputs here
       for event in event_pump.poll_iter() {
@@ -221,10 +218,10 @@ impl Graphics {
       self.canvas.set_draw_color(SOIL_COLOR);
       self.canvas.clear();
 
-      for i in 0..state_size {
+      for i in 0..state.game_size.load(Relaxed) {
         let i = i as u32;
         unsafe {
-          let unit = *raw_state.offset(i as isize);
+          let unit = *state.game_data.load(Relaxed).offset(i as isize);
 
           match unit.concept {
             Concept::Sunflower => {
