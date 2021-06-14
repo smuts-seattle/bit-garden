@@ -4,11 +4,16 @@ extern crate rocket;
 mod game;
 mod graphics;
 
+use crate::game::CellState;
 use crate::game::Concept;
 use crate::game::Mutation;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
+use std::sync::atomic::AtomicPtr;
+use std::sync::Arc;
+use std::time::Duration;
+use std::time::SystemTime;
 
 pub const SQUARE_SIZE: u32 = 8;
 pub const DEFAULT_PLAYGROUND_WIDTH: u32 = 100;
@@ -33,23 +38,46 @@ fn rocket() -> _ {
   } else {
     DEFAULT_FRAME_RATE
   };
-  let show_fps = if args.len() > 3 {
-    str::parse::<u32>(&args[3]).expect("Third argument must be 1 or 0, to show or hide frame rate")
+  let render_graphics = if args.len() > 3 {
+    str::parse::<u32>(&args[3]).expect("Third argument must be 1 or 0, to show or hide graphics")
+  } else {
+    1
+  };
+  let show_fps = if args.len() > 4 {
+    str::parse::<u32>(&args[4]).expect("Third argument must be 1 or 0, to show or hide frame rate")
   } else {
     0
   };
 
+  let (snd, rcv) = std::sync::mpsc::channel::<Arc<CellState>>();
+
   std::thread::spawn(move || {
-    let mut graphics =
-      graphics::Graphics::new(SQUARE_SIZE, playground_width, frame_rate, show_fps == 1)
-        .expect("failed to load graphics");
-
     let mut runner = game::Runner::new(playground_width);
+    snd.send(runner.game_state.clone());
 
-    graphics
-      .run(
-        &mut runner,
-        |game, event: Event| {
+    let clock = SystemTime::now();
+    let mut next_frame: u128 = 0;
+
+    loop {
+      let curr_time = clock.elapsed().unwrap().as_millis();
+      if curr_time >= next_frame {
+        runner.execute();
+        next_frame = curr_time + (1000 / (frame_rate as u128));
+      } else {
+        std::thread::sleep(Duration::from_millis((next_frame - curr_time) as u64));
+      }
+    }
+  });
+
+  let data = rcv.recv().unwrap();
+  if render_graphics == 1 {
+    std::thread::spawn(move || {
+      let mut graphics =
+        graphics::Graphics::new(SQUARE_SIZE, playground_width, frame_rate, show_fps == 1)
+          .expect("failed to load graphics");
+
+      graphics
+        .run(data, playground_width * playground_width, |event: Event| {
           match event {
             Event::Quit { .. }
             | Event::KeyDown {
@@ -63,7 +91,7 @@ fn rocket() -> _ {
               repeat: false,
               ..
             } => {
-              game.toggle_pause();
+              // game.toggle_pause();
             }
             Event::MouseButtonDown {
               x,
@@ -73,11 +101,11 @@ fn rocket() -> _ {
             } => {
               let x = (x as u32) / SQUARE_SIZE;
               let y = (y as u32) / SQUARE_SIZE;
-              game.mutate(Mutation {
+              /*game.mutate(Mutation {
                 x,
                 y,
                 concept: Concept::Rose,
-              })
+              })*/
             }
             Event::MouseMotion {
               x, y, mousestate, ..
@@ -85,23 +113,20 @@ fn rocket() -> _ {
               if mousestate.left() {
                 let x = (x as u32) / SQUARE_SIZE;
                 let y = (y as u32) / SQUARE_SIZE;
-                game.mutate(Mutation {
+                /*game.mutate(Mutation {
                   x,
                   y,
                   concept: Concept::Rose,
-                })
+                })*/
               }
             }
             _ => {}
           }
           return false;
-        },
-        |runner| {
-          runner.execute();
-        },
-      )
-      .expect("Error in main loop");
-  });
+        })
+        .expect("Error in main loop");
+    });
+  }
 
   rocket::build().mount("/", routes![index])
 }

@@ -2,12 +2,15 @@ extern crate sdl2;
 
 use crate::game::Concept;
 use crate::game::Runner;
+use crate::CellState;
+use core::sync::atomic::AtomicPtr;
 use sdl2::event::Event;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::{Canvas, Texture, TextureCreator};
 use sdl2::video::{Window, WindowContext};
 use std::path::Path;
+use std::sync::Arc;
 
 const SOIL_COLOR: Color = Color::RGB(53, 48, 40);
 const SUNFLOWER_COLOR: Color = Color::RGB(100, 87, 39);
@@ -185,15 +188,14 @@ impl Graphics {
     })
   }
 
-  pub fn run<FEvent, FFrame>(
+  pub fn run<FEvent>(
     &mut self,
-    game: &mut Runner,
+    state: Arc<CellState>,
+    state_size: u32,
     mut on_event: FEvent,
-    mut on_frame: FFrame,
   ) -> Result<(), String>
   where
-    FEvent: FnMut(&mut Runner, Event) -> bool,
-    FFrame: FnMut(&mut Runner),
+    FEvent: FnMut(Event) -> bool,
   {
     let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string())?;
     let mut timer = self.sdl_context.timer()?;
@@ -207,29 +209,22 @@ impl Graphics {
     let textures =
       Graphics::dummy_texture(&mut self.canvas, &self.texture_creator, self.square_size)
         .expect("could not build square texture");
-
+    let raw_state = Arc::into_raw(state);
     'exit: loop {
       // get the inputs here
       for event in event_pump.poll_iter() {
-        if on_event(game, event) {
+        if on_event(event) {
           break 'exit Ok(());
         }
-      }
-
-      let ticks = timer.ticks();
-      if (ticks - last_frame) >= (1000 / self.frame_rate) {
-        on_frame(game);
-        frame_rate = 1000 / (ticks - last_frame);
-        last_frame = ticks;
       }
 
       self.canvas.set_draw_color(SOIL_COLOR);
       self.canvas.clear();
 
-      for i in 0..game.game_size {
+      for i in 0..state_size {
         let i = i as u32;
         unsafe {
-          let unit = *game.game_state.offset(i as isize);
+          let unit = *raw_state.offset(i as isize);
 
           match unit.concept {
             Concept::Sunflower => {

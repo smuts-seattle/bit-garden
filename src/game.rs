@@ -1,9 +1,11 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
+use core::sync::atomic::AtomicPtr;
 use std::cell::RefCell;
 use std::ffi::CString;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
 use wyzoid::high::job::JobTimingsBuilder;
 use wyzoid::low::vkcmd;
 use wyzoid::low::vkdescriptor;
@@ -53,7 +55,7 @@ pub struct Runner {
     fence: vkfence::VkFence,
     cmd_pool: vkcmd::VkCmdPool,
     flip: i32,
-    pub game_state: *const CellState,
+    pub game_state: Arc<CellState>,
     pub game_size: i32,
     left_data: *mut CellState,
     right_data: *mut CellState,
@@ -303,7 +305,7 @@ impl Runner {
         return Runner {
             vulkan,
             memory,
-            game_state: left_data,
+            game_state: unsafe { Arc::from_raw(left_data) },
             game_size: (world_width * world_width) as i32,
             world_width,
             timing,
@@ -371,10 +373,12 @@ impl Runner {
         self.fence.reset();
         self.timing = self.timing.stop_execution();
         self.flip = if self.flip == 0 { 1 } else { 0 };
-        self.game_state = if self.flip == 0 {
-            self.left_data
-        } else {
-            self.right_data
-        };
+        unsafe {
+            self.game_state = Arc::from_raw(if self.flip == 0 {
+                self.left_data
+            } else {
+                self.right_data
+            })
+        }
     }
 }
