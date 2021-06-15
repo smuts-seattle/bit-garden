@@ -1,10 +1,11 @@
 #[macro_use]
 extern crate rocket;
 
+mod args;
 mod game;
 mod graphics;
 
-use crate::game::CellState;
+use crate::args::parse_args;
 use crate::game::GameState;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -13,10 +14,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 
-pub const SQUARE_SIZE: u32 = 8;
-pub const DEFAULT_PLAYGROUND_WIDTH: u32 = 100;
-pub const DEFAULT_FRAME_RATE: u32 = 2;
-
 #[get("/")]
 fn index() -> &'static str {
   "Hello, world!"
@@ -24,43 +21,22 @@ fn index() -> &'static str {
 
 #[launch]
 fn rocket() -> _ {
-  let args: Vec<String> = std::env::args().collect();
-  let playground_width = if args.len() > 1 {
-    str::parse::<u32>(&args[1]).expect("First argument must be integer width")
-  } else {
-    DEFAULT_PLAYGROUND_WIDTH
-  };
-  let frame_rate = if args.len() > 2 {
-    str::parse::<u32>(&args[2])
-      .expect("Second argument must be integer frame rate, in frames-per-second")
-  } else {
-    DEFAULT_FRAME_RATE
-  };
-  let render_graphics = if args.len() > 3 {
-    str::parse::<u32>(&args[3]).expect("Third argument must be 1 or 0, to show or hide graphics")
-  } else {
-    1
-  };
-  let show_fps = if args.len() > 4 {
-    str::parse::<u32>(&args[4]).expect("Third argument must be 1 or 0, to show or hide frame rate")
-  } else {
-    0
-  };
+  let args = parse_args(std::env::args().skip(1).collect());
 
   let (snd_state, rcv_state) = std::sync::mpsc::channel::<Arc<GameState>>();
 
   std::thread::spawn(move || {
-    let mut runner = game::Runner::new(playground_width);
+    let mut runner = game::Runner::new(args.size);
     snd_state.send(runner.game_state.clone()).unwrap();
 
     let clock = SystemTime::now();
-    let mut next_frame: u128 = 0;
+    let mut next_frame: u128 = clock.elapsed().unwrap().as_millis();
 
     loop {
       let curr_time = clock.elapsed().unwrap().as_millis();
       if curr_time >= next_frame {
+        next_frame = curr_time + (1000 / (args.update_rate as u128));
         runner.execute();
-        next_frame = curr_time + (1000 / (frame_rate as u128));
       } else {
         std::thread::sleep(Duration::from_millis((next_frame - curr_time) as u64));
       }
@@ -68,10 +44,10 @@ fn rocket() -> _ {
   });
 
   let data = rcv_state.recv().unwrap();
-  if render_graphics == 1 {
+  if args.show_graphics {
     std::thread::spawn(move || {
       let mut graphics =
-        graphics::Graphics::new(SQUARE_SIZE, playground_width, frame_rate, show_fps == 1)
+        graphics::Graphics::new(args.pixel_size, args.size, args.draw_rate, args.show_fps)
           .expect("failed to load graphics");
 
       graphics
@@ -97,8 +73,8 @@ fn rocket() -> _ {
               mouse_btn: MouseButton::Left,
               ..
             } => {
-              let x = (x as u32) / SQUARE_SIZE;
-              let y = (y as u32) / SQUARE_SIZE;
+              let x = (x as u32) / args.pixel_size;
+              let y = (y as u32) / args.pixel_size;
               /*game.mutate(Mutation {
                 x,
                 y,
@@ -109,8 +85,8 @@ fn rocket() -> _ {
               x, y, mousestate, ..
             } => {
               if mousestate.left() {
-                let x = (x as u32) / SQUARE_SIZE;
-                let y = (y as u32) / SQUARE_SIZE;
+                let x = (x as u32) / args.pixel_size;
+                let y = (y as u32) / args.pixel_size;
                 /*game.mutate(Mutation {
                   x,
                   y,

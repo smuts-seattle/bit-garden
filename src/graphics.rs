@@ -1,10 +1,7 @@
 extern crate sdl2;
 
 use crate::game::Concept;
-use crate::game::Runner;
-use crate::CellState;
 use crate::GameState;
-use core::sync::atomic::AtomicPtr;
 use sdl2::event::Event;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;

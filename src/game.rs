@@ -2,7 +2,6 @@ use ash::version::DeviceV1_0;
 use ash::vk;
 use std::cell::RefCell;
 use std::ffi::CString;
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::AtomicI32;
