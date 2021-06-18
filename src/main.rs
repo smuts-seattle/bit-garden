@@ -9,11 +9,8 @@ mod graphics;
 use crate::args::parse_args;
 use crate::game::CellState;
 use crate::game::GameState;
-use rocket::http::Method;
+use rocket::fs::NamedFile;
 use rocket::State;
-use rocket_cors::AllowedMethods;
-use rocket_cors::AllowedOrigins;
-use rocket_cors::CorsOptions;
 
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
@@ -49,7 +46,12 @@ impl Fairing for CORS {
 }
 
 #[get("/")]
-fn index(state: &State<Arc<GameState>>) -> &[u8] {
+async fn index() -> Option<NamedFile> {
+  NamedFile::open("target/index.html").await.ok()
+}
+
+#[get("/garden")]
+fn garden(state: &State<Arc<GameState>>) -> &[u8] {
   let game = state.inner();
 
   unsafe {
@@ -147,6 +149,6 @@ fn rocket() -> _ {
 
   rocket::build()
     .manage(data2)
-    .mount("/", routes![index])
+    .mount("/", routes![index, garden])
     .attach(CORS)
 }
