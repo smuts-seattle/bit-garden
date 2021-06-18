@@ -1,13 +1,19 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
+use rocket::futures::Stream;
+use rocket::http::Status;
+use rocket::response::Responder;
+use rocket::Response;
 use std::cell::RefCell;
 use std::ffi::CString;
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
+use std::task::Poll::Ready;
 use wyzoid::high::job::JobTimingsBuilder;
 use wyzoid::low::vkcmd;
 use wyzoid::low::vkdescriptor;
@@ -31,6 +37,12 @@ pub enum Concept {
 pub struct CellState {
     pub concept: Concept,
     pub blood: i32,
+}
+
+impl Into<u8> for CellState {
+    fn into(self) -> u8 {
+        self.concept as u8
+    }
 }
 
 #[derive(Clone, Copy)]

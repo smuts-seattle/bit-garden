@@ -1,3 +1,4 @@
+#![feature(async_stream)]
 #[macro_use]
 extern crate rocket;
 
@@ -6,17 +7,58 @@ mod game;
 mod graphics;
 
 use crate::args::parse_args;
+use crate::game::CellState;
 use crate::game::GameState;
+use rocket::http::Method;
+use rocket::State;
+use rocket_cors::AllowedMethods;
+use rocket_cors::AllowedOrigins;
+use rocket_cors::CorsOptions;
+
+use rocket::fairing::{Fairing, Info, Kind};
+use rocket::http::Header;
+use rocket::{Request, Response};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 
+pub struct CORS;
+
+#[rocket::async_trait]
+impl Fairing for CORS {
+  fn info(&self) -> Info {
+    Info {
+      name: "Add CORS headers to responses",
+      kind: Kind::Response,
+    }
+  }
+
+  async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
+    response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
+    response.set_header(Header::new(
+      "Access-Control-Allow-Methods",
+      "POST, GET, PATCH, OPTIONS",
+    ));
+    response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
+    response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+  }
+}
+
 #[get("/")]
-fn index() -> &'static str {
-  "Hello, world!"
+fn index(state: &State<Arc<GameState>>) -> &[u8] {
+  let game = state.inner();
+
+  unsafe {
+    return std::slice::from_raw_parts(
+      game.game_data.load(Relaxed) as *const u8,
+      game.game_size.load(Relaxed) as usize
+        * (std::mem::size_of::<CellState>() / std::mem::size_of::<u8>()),
+    );
+  };
 }
 
 #[launch]
@@ -44,6 +86,7 @@ fn rocket() -> _ {
   });
 
   let data = rcv_state.recv().unwrap();
+  let data2 = data.clone();
   if args.show_graphics {
     std::thread::spawn(move || {
       let mut graphics =
@@ -102,5 +145,8 @@ fn rocket() -> _ {
     });
   }
 
-  rocket::build().mount("/", routes![index])
+  rocket::build()
+    .manage(data2)
+    .mount("/", routes![index])
+    .attach(CORS)
 }
