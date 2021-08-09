@@ -3,10 +3,19 @@
   <head>
     <title>This is the title of the webpage!</title>
   </head>
-  <body style="margin:0;overflow:hidden">
+  <body style="margin:0;overflow:hidden;background-color:#353028">
     <script>
-      const colors = ['#000', '#444', '#777', '#999', '#FFF']
+      const colors = ['#353028', '#645727', '#BF4342', '#F3E0EC', '#FFDF64', '#D0F0C0', '#FFDF64']
       const cell_size = 24;//px
+      function blendColors(colorA, colorB, amount) {
+        amount = Math.min(Math.max(amount, 0), 1);
+        const [rA, gA, bA] = colorA.match(/\w\w/g).map((c) => parseInt(c, 16));
+        const [rB, gB, bB] = colorB.match(/\w\w/g).map((c) => parseInt(c, 16));
+        const r = Math.round((rA * (1 - amount)) + (rB * amount)).toString(16).padStart(2, '0');
+        const g = Math.round((gA * (1 - amount)) + (gB * amount)).toString(16).padStart(2, '0');
+        const b = Math.round((bA * (1 - amount)) + (bB * amount)).toString(16).padStart(2, '0');
+        return '#' + r + g + b;
+      }
 
       setInterval(function() {
         httpRequest = new XMLHttpRequest();
@@ -16,9 +25,9 @@
           if (httpRequest.readyState === XMLHttpRequest.DONE) {
             const arr = new Int32Array(httpRequest.response);
             var cells = [];
-            for (var i = 0; i < arr.length; i += 2)
+            for (var i = 0; i < arr.length; i += 3)
             {
-              cells = cells.concat({concept: arr[i], blood: arr[i+1]})
+              cells = cells.concat({concept: arr[i], blood: arr[i+1], joy: arr[i+2]})
             }
         
             const width = Math.sqrt(cells.length);
@@ -28,6 +37,7 @@
         
             for (var i = 0; i < cells.length; i++)
             {
+              //ctx.fillStyle = blendColors(colors[cells[i].concept], colors[5], Math.min(cells[i].joy / 14, 0.5)); 
               ctx.fillStyle = colors[cells[i].concept]; 
               ctx.fillRect((i % width) * cell_size, Math.floor(i / width) * cell_size, cell_size, cell_size)
             }

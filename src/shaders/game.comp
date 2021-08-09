@@ -5,10 +5,13 @@ const int Soil = 0;
 const int Sunflower = 1;
 const int Rose = 2;
 const int Dogwood = 3;
+const int Elder = 4;
+const int Thistle = 5;
 
 struct CellState {
   int concept;
   int blood;
+  int joy;
 };
 
 struct Mutation {
@@ -57,6 +60,7 @@ for (int i = 0 - _radius_outer; i <= _radius_outer; i++) {\
 void to_dust(inout CellState square) {
   square.concept = Soil;
   square.blood = 0;
+  square.joy = 0;
 }
 
 void main() {
@@ -83,48 +87,51 @@ void main() {
 
   if (square.concept == Soil || square.concept == Sunflower) {
     uint count = 0;
+    uint revelry = 0;
     check_nearby(x, y, 1, 1, {
       if (cell.concept == Sunflower) {
         count += 1;
+        revelry += cell.joy;
       }
     });
-    if (square.concept == Sunflower && (count > 3 || count < 2)) {
-      // Death
-      bool loved = false;
-      check_nearby(x, y, 2, 2, {
-        if (cell.concept == Rose) {
-          loved = true;
-          i = j = 1000;
-          break;
-        }
-      });
-
-      if (loved) {
-        square.blood += 1;
-      } else if (square.blood > 2) {
-        bool compassion = false;
+    
+    if (square.concept == Sunflower) {
+      square.joy += int(revelry / 8);
+      if (square.joy > 100) {
+        square.joy = 100;
+      }
+      if (count > 3 || count < 2) {
+        // Death
+        bool loved = false;
         check_nearby(x, y, 2, 2, {
-          if (cell.concept == Dogwood) {
-            compassion = true;
+          if (cell.concept == Rose) {
+            loved = true;
             i = j = 1000;
             break;
           }
         });
-        if (compassion) {
+
+        if (loved) {
+          square.blood += 1;
+        } else if (square.blood > 8) {
           square.concept = Rose;
         } else {
           to_dust(square);
         }
       } else {
-        to_dust(square);
+        square.joy += 1;
+        if (square.joy > 100) {
+          square.joy = 100;
+        }
       }
     } else if (square.concept == Soil) {
       if (count == 3) {
         // Life
         square.concept = Sunflower;
-      } else if (count == 8) {
-        // Compassion
+      } else if (count > 7) {
+        // Love
         square.concept = Rose;
+        square.joy = 0;
       }
     }
   } else if (square.concept == Rose) {
@@ -136,13 +143,41 @@ void main() {
     if (suffering >= 12) {
       // Sacrifice
       square.concept = Dogwood;
-      square.blood = -50;
+      square.blood -= 60;
     }
   } else if (square.concept == Dogwood) {
+    int law = 0;
+    bool order = false;
+    check_nearby(x, y, 15, 1, {
+      if (cell.concept == Dogwood) {
+        law += 1;
+      } else if (cell.concept == Elder || cell.concept == Thistle) {
+        order = true;
+      }
+    });
     square.blood += 1;
     if (square.blood >= 0) {
-      // Forgotten
-      to_dust(square);
+      if (law > 10 && !order) {
+        // Enthrone
+        square.concept = Elder;
+        square.joy = 0;
+        square.blood = 0;
+      } else {
+        // Forgotten
+        to_dust(square);
+      }
+    } else if (square.blood < -30) {
+      bool zeal = false;
+      check_nearby(x, y, 15, 12, {
+        if (cell.concept == Elder) {
+          zeal = true;
+        }
+      });
+      if (zeal) {
+        square.concept = Thistle;
+        square.joy = 0;
+        square.blood = 0;
+      }
     }
   }
     

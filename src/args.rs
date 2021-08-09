@@ -15,7 +15,7 @@ pub fn parse_args(args: Vec<String>) -> Args {
     size: 100,
     pixel_size: 4,
     update_rate: 2,
-    show_graphics: true,
+    show_graphics: false,
     draw_rate: 2,
     show_fps: true,
   };

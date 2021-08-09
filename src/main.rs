@@ -8,12 +8,17 @@ mod graphics;
 
 use crate::args::parse_args;
 use crate::game::CellState;
+use crate::game::Concept;
 use crate::game::GameState;
+use crate::game::Mutation;
+use std::sync::Mutex;
+
 use rocket::fs::NamedFile;
 use rocket::State;
 
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
+use rocket::serde::{json::Json, Deserialize, Serialize};
 use rocket::{Request, Response};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -47,7 +52,7 @@ impl Fairing for CORS {
 
 #[get("/")]
 async fn index() -> Option<NamedFile> {
-  NamedFile::open("target/index.html").await.ok()
+  NamedFile::open("./target/index.html").await.ok()
 }
 
 #[get("/garden")]
@@ -63,15 +68,37 @@ fn garden(state: &State<Arc<GameState>>) -> &[u8] {
   };
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
+struct Position {
+  x: u32,
+  y: u32,
+}
+#[post("/mutate", format = "application/json", data = "<pos>")]
+fn mutate(pos: Json<Position>, state: &State<Arc<Mutex<Vec<Mutation>>>>) {
+  let mut mutations = state.inner().lock().unwrap();
+
+  mutations.insert(
+    0,
+    Mutation {
+      x: pos.x,
+      y: pos.y,
+      concept: Concept::Sunflower,
+    },
+  )
+}
+
 #[launch]
 fn rocket() -> _ {
   let args = parse_args(std::env::args().skip(1).collect());
 
   let (snd_state, rcv_state) = std::sync::mpsc::channel::<Arc<GameState>>();
+  let (snd_mutations, rcv_mutations) = std::sync::mpsc::channel::<Arc<Mutex<Vec<Mutation>>>>();
 
   std::thread::spawn(move || {
     let mut runner = game::Runner::new(args.size);
     snd_state.send(runner.game_state.clone()).unwrap();
+    snd_mutations.send(runner.mutations.clone()).unwrap();
 
     let clock = SystemTime::now();
     let mut next_frame: u128 = clock.elapsed().unwrap().as_millis();
@@ -87,8 +114,10 @@ fn rocket() -> _ {
     }
   });
 
-  let data = rcv_state.recv().unwrap();
-  let data2 = data.clone();
+  let state_ref_for_graphics = rcv_state.recv().unwrap();
+  let state_ref_for_web = state_ref_for_graphics.clone();
+  let mutations_ref_for_web = rcv_mutations.recv().unwrap();
+  let mutations_ref_for_graphics = mutations_ref_for_web.clone();
   if args.show_graphics {
     std::thread::spawn(move || {
       let mut graphics =
@@ -96,7 +125,7 @@ fn rocket() -> _ {
           .expect("failed to load graphics");
 
       graphics
-        .run(data, |event: Event| {
+        .run(state_ref_for_graphics, |event: Event| {
           match event {
             Event::Quit { .. }
             | Event::KeyDown {
@@ -120,11 +149,14 @@ fn rocket() -> _ {
             } => {
               let x = (x as u32) / args.pixel_size;
               let y = (y as u32) / args.pixel_size;
-              /*game.mutate(Mutation {
-                x,
-                y,
-                concept: Concept::Rose,
-              })*/
+              mutations_ref_for_graphics.lock().unwrap().insert(
+                0,
+                Mutation {
+                  x,
+                  y,
+                  concept: Concept::Rose,
+                },
+              );
             }
             Event::MouseMotion {
               x, y, mousestate, ..
@@ -132,11 +164,14 @@ fn rocket() -> _ {
               if mousestate.left() {
                 let x = (x as u32) / args.pixel_size;
                 let y = (y as u32) / args.pixel_size;
-                /*game.mutate(Mutation {
-                  x,
-                  y,
-                  concept: Concept::Rose,
-                })*/
+                mutations_ref_for_graphics.lock().unwrap().insert(
+                  0,
+                  Mutation {
+                    x,
+                    y,
+                    concept: Concept::Rose,
+                  },
+                );
               }
             }
             _ => {}
@@ -148,7 +183,8 @@ fn rocket() -> _ {
   }
 
   rocket::build()
-    .manage(data2)
-    .mount("/", routes![index, garden])
+    .manage(state_ref_for_web)
+    .manage(mutations_ref_for_web)
+    .mount("/", routes![index, garden, mutate])
     .attach(CORS)
 }

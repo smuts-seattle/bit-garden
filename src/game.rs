@@ -1,19 +1,14 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
-use rocket::futures::Stream;
-use rocket::http::Status;
-use rocket::response::Responder;
-use rocket::Response;
 use std::cell::RefCell;
 use std::ffi::CString;
-use std::io::Cursor;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
-use std::task::Poll::Ready;
+use std::sync::Mutex;
 use wyzoid::high::job::JobTimingsBuilder;
 use wyzoid::low::vkcmd;
 use wyzoid::low::vkdescriptor;
@@ -30,6 +25,8 @@ pub enum Concept {
     Sunflower = 1,
     Rose = 2,
     Dogwood = 3,
+    Elder = 4,
+    Thistle = 5,
 }
 
 #[derive(Clone, Copy)]
@@ -37,6 +34,7 @@ pub enum Concept {
 pub struct CellState {
     pub concept: Concept,
     pub blood: i32,
+    pub joy: i32,
 }
 
 impl Into<u8> for CellState {
@@ -63,7 +61,7 @@ struct ShaderParams {
 
 pub struct Runner {
     vulkan: Rc<VulkanState>,
-    memory: vkmem::VkMem,
+    _memory: vkmem::VkMem,
     world_width: u32,
     timing: JobTimingsBuilder,
     fence: vkfence::VkFence,
@@ -74,7 +72,7 @@ pub struct Runner {
     param_data: *mut ShaderParams,
     paused: bool,
 
-    mutations: Vec<Mutation>,
+    pub mutations: Arc<Mutex<Vec<Mutation>>>,
     pub game_state: Arc<GameState>,
 }
 
@@ -88,19 +86,18 @@ impl Runner {
         let mut state = vec![
             CellState {
                 concept: Concept::Soil,
-                blood: 0
+                blood: 0,
+                joy: 0
             };
             (world_width * world_width) as usize
         ];
 
-        // let's make a nice default pattern
-        for i in 1..(world_width - 1) {
-            state[(1 + i * world_width) as usize].concept = Concept::Sunflower;
-            state[((world_width - 2) + i * world_width) as usize].concept = Concept::Sunflower;
-        }
-        for j in 2..(world_width - 2) {
-            state[(world_width + j) as usize].concept = Concept::Sunflower;
-            state[((world_width - 2) * world_width + j) as usize].concept = Concept::Sunflower;
+        for i in 0..(world_width - 1) {
+            for j in 0..world_width - 1 {
+                if rand::random::<u8>() > (((u8::MAX as f32) * 0.9) as u8) {
+                    state[((i * world_width) + j) as usize].concept = Concept::Sunflower;
+                }
+            }
         }
 
         // Memory init.
@@ -322,7 +319,7 @@ impl Runner {
         let fence = vkfence::VkFence::new(vulkan.clone(), false);
         return Runner {
             vulkan,
-            memory,
+            _memory: memory,
             game_state: Arc::new(GameState {
                 game_data: AtomicPtr::new(left_data),
                 game_size: AtomicI32::new((world_width * world_width) as i32),
@@ -336,7 +333,7 @@ impl Runner {
             right_data,
             param_data,
             paused: false,
-            mutations: vec![],
+            mutations: Arc::new(Mutex::new(vec![])),
         };
     }
 
@@ -344,39 +341,38 @@ impl Runner {
         self.paused = !self.paused;
     }
 
-    pub fn mutate(&mut self, mutation: Mutation) {
-        self.mutations.insert(0, mutation);
-    }
-
     pub fn execute(&mut self) {
         if self.paused {
             return;
         };
-        let queued_mutations = self
-            .mutations
-            .splice(0..(std::cmp::min(self.mutations.len(), 100)), vec![]);
-        let mut m_array = [Mutation {
-            x: 0,
-            y: 0,
-            concept: Concept::Soil,
-        }; 100];
-        let m_count = queued_mutations.len() as u32;
-        for (i, m) in queued_mutations.enumerate() {
-            m_array[i] = m;
-        }
+        {
+            let mut mutations = self.mutations.lock().unwrap();
+            let mutation_count = mutations.len();
+            let queued_mutations =
+                mutations.splice(0..(std::cmp::min(mutation_count, 100)), vec![]);
+            let mut m_array = [Mutation {
+                x: 0,
+                y: 0,
+                concept: Concept::Soil,
+            }; 100];
+            let m_count = queued_mutations.len() as u32;
+            for (i, m) in queued_mutations.enumerate() {
+                m_array[i] = m;
+            }
 
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                vec![ShaderParams {
-                    world_width: self.world_width,
-                    flip: self.flip,
-                    mutations_size: m_count,
-                    mutations: m_array,
-                }]
-                .as_ptr(),
-                self.param_data,
-                1,
-            );
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    vec![ShaderParams {
+                        world_width: self.world_width,
+                        flip: self.flip,
+                        mutations_size: m_count,
+                        mutations: m_array,
+                    }]
+                    .as_ptr(),
+                    self.param_data,
+                    1,
+                );
+            }
         }
 
         self.timing = self.timing.start_execution();

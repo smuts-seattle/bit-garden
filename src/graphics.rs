@@ -18,6 +18,7 @@ const DOGWOOD_COLOR: Color = Color::RGB(234, 213, 230);
 const DOGWOOD_COLOR_FADED: Color = Color::RGB(185, 168, 178);
 const DOGWOOD_COLOR_RELIC: Color = Color::RGB(119, 108, 109);
 const DOGWOOD_COLOR_RUIN: Color = Color::RGB(69, 63, 57);
+const ELDER_COLOR: Color = Color::RGB(255, 223, 100);
 
 const FPS_COLOR: Color = Color::RGB(208, 240, 192);
 
@@ -38,6 +39,7 @@ pub struct Textures<'a> {
   dogwood_faded: Texture<'a>,
   dogwood_relic: Texture<'a>,
   dogwood_ruin: Texture<'a>,
+  elder: Texture<'a>,
 }
 
 impl Graphics {
@@ -120,6 +122,9 @@ impl Graphics {
     let mut dogwood_ruin_texture = texture_creator
       .create_texture_target(None, square_size, square_size)
       .map_err(|e| e.to_string())?;
+    let mut elder_texture = texture_creator
+      .create_texture_target(None, square_size, square_size)
+      .map_err(|e| e.to_string())?;
 
     let textures = vec![
       (&mut sunflower_texture, 1),
@@ -128,6 +133,7 @@ impl Graphics {
       (&mut dogwood_faded_texture, 4),
       (&mut dogwood_relic_texture, 5),
       (&mut dogwood_ruin_texture, 6),
+      (&mut elder_texture, 7),
     ];
 
     let square_size = square_size;
@@ -173,6 +179,12 @@ impl Graphics {
               .fill_rect(Rect::new(0, 0, square_size, square_size))
               .expect("could not draw point");
           }
+          7 => {
+            texture_canvas.set_draw_color(ELDER_COLOR);
+            texture_canvas
+              .fill_rect(Rect::new(0, 0, square_size, square_size))
+              .expect("could not draw point");
+          }
           _ => {}
         }
       })
@@ -184,6 +196,7 @@ impl Graphics {
       dogwood_faded: dogwood_faded_texture,
       dogwood_relic: dogwood_relic_texture,
       dogwood_ruin: dogwood_ruin_texture,
+      elder: elder_texture,
     })
   }
 
@@ -291,6 +304,30 @@ impl Graphics {
                   ),
                 )?;
               }
+            }
+            Concept::Elder => {
+              self.canvas.copy(
+                &textures.elder,
+                None,
+                Rect::new(
+                  ((i % self.world_width) * self.square_size) as i32,
+                  ((i / self.world_width) * self.square_size) as i32,
+                  self.square_size,
+                  self.square_size,
+                ),
+              )?;
+            }
+            Concept::Thistle => {
+              self.canvas.copy(
+                &textures.elder,
+                None,
+                Rect::new(
+                  ((i % self.world_width) * self.square_size) as i32,
+                  ((i / self.world_width) * self.square_size) as i32,
+                  self.square_size,
+                  self.square_size,
+                ),
+              )?;
             }
             _ => {}
           }
